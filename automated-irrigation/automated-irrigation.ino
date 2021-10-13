@@ -15,19 +15,23 @@ void setup() {
   pinMode(VALVE_PIN, OUTPUT);
   // valve off
   digitalWrite(VALVE_PIN, HIGH);
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C); 
-  display.setTextColor(WHITE);
-  display.clearDisplay(); 
-  display.setTextSize(2);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println("Rega \ndo Mano");
-  display.display();
+  displayInitialSettings();
   delay(2000);
   Serial.begin(9600);
 }
 
-void getWatering(){
+void displayInitialSettings() {
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C); 
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextColor(WHITE);
+  display.setTextSize(2);
+  display.clearDisplay(); 
+  display.setCursor(0, 0);
+  display.println("Mano \nWatering");
+  display.display();
+}
+
+void getWatering() {
   display.clearDisplay();
   display.setCursor(4, 2);
   display.println(F("Regando..."));
@@ -39,7 +43,7 @@ void getWatering(){
   digitalWrite(VALVE_PIN, HIGH);
 }
 
-void wateringWarning(){
+void wateringWarning() {
   display.clearDisplay();
   display.setCursor(5, 0);
   display.println(F("Solo"));
