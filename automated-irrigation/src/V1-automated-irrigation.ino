@@ -1,9 +1,9 @@
-#include <Wire.h> 
-#include <Adafruit_GFX.h> 
-#include <Adafruit_SSD1306.h> 
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Wire.h>
 #define SENSOR_PIN A0
 #define VALVE_PIN 10
-#define DRY_THRESHOLD 77
+#define DRY_THRESHOLD 60
 
 Adafruit_SSD1306 display = Adafruit_SSD1306();
 
@@ -21,13 +21,13 @@ void setup() {
 }
 
 void displayInitialSettings() {
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C); 
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.setTextColor(SSD1306_WHITE);
   display.setTextColor(WHITE);
   display.setTextSize(2);
-  display.clearDisplay(); 
+  display.clearDisplay();
   display.setCursor(0, 0);
-  display.println("Mano \nWatering");
+  display.println("Rega \nWatering");
   display.display();
 }
 
@@ -39,7 +39,7 @@ void getWatering() {
   // valve on
   digitalWrite(VALVE_PIN, LOW);
   // waiting time
-  delay(TIME_WATERING*1000);
+  delay(TIME_WATERING * 1000);
   digitalWrite(VALVE_PIN, HIGH);
 }
 
@@ -50,10 +50,10 @@ void wateringWarning() {
   display.println(F("Encharcado!"));
   display.display();
   delay(3000);
-} 
+}
 
 void loop() {
-  for(int i=0; i < 5; i++) {
+  for (int i = 0; i < 5; i++) {
     display.clearDisplay();
     display.setCursor(20, 0);
     display.println("Umidade:");
@@ -65,11 +65,10 @@ void loop() {
     display.display();
     delay(1000);
   }
-  
-  if(soilMoisture < DRY_THRESHOLD) {
-     getWatering();
-  }
-  else {
+
+  if (soilMoisture < DRY_THRESHOLD) {
+    getWatering();
+  } else {
     wateringWarning();
   }
 }
