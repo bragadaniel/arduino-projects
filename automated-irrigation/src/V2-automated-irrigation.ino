@@ -2,6 +2,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 
+// Constants
 #define LCD_ADDRESS 0x27
 #define LCD_COL 16
 #define LCD_ROW 2
@@ -30,20 +31,24 @@ LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COL, LCD_ROW);
 int mode = 0;
 int submode = 0;
 int slot = 0;
-int selectedTimer = 0;
-int timerHour[2] = {0, 0};
-int timerMinute[2] = {0, 0};
-
-int buttonState = HIGH;
-int lastButtonState = HIGH;
-unsigned long lastDebounceTime = 0;
-unsigned long debounceDelay = 50;
-
+int hours = 0;
+int minutes = 0;
+int countEditHour = 0;
+char hoursStr[3];
+char minutesStr[3];
 // chars
 byte clockChar[] = {B00000, B01110, B10101, B10101,
                     B10111, B10001, B10001, B01110};
 byte alarmChar[] = {B00000, B00100, B01110, B01110,
                     B01110, B11111, B00100, B00000};
+
+enum ButtonState {
+  IDLE,
+  OK_BUTTON_PRESSED,
+};
+
+ButtonState currentState = IDLE;
+bool button2Enabled = true;
 
 void setup() {
   Wire.begin();
@@ -68,7 +73,7 @@ void loop() {
   if (digitalRead(MODE_BUTTON_PIN) == LOW) {
     mainMenu();
   }
-
+  // Clock configs
   if (mode == 1 && digitalRead(OK_BUTTON_PIN) == LOW) {
     clockSettings();
     while (submode == 1 && mode == 1) {
@@ -77,23 +82,81 @@ void loop() {
         clockModeScreen();
       }
       if (digitalRead(OK_BUTTON_PIN) == LOW) {
-        savignScreen();
+        savingScreen();
       }
     }
   } else if (mode == 1 && submode == -2 &&
              digitalRead(RESET_BUTTON_PIN) == LOW) {
     initialScreen();
   }
-
+  // Alarm configs
   if (mode == 2 && digitalRead(OK_BUTTON_PIN) == LOW) {
     alarmSettings();
     while (submode == 1 && mode == 2) {
       if (digitalRead(RESET_BUTTON_PIN) == LOW) {
         submode = -1;
         alarmModeScreen();
+        countEditHour = 0;
       }
-      if (digitalRead(OK_BUTTON_PIN) == LOW) {
-        savignScreen();
+
+      switch (currentState) {
+        case IDLE:
+          if (digitalRead(OK_BUTTON_PIN) == LOW) {
+            if (button2Enabled) {
+              countEditHour++;
+            }
+            currentState = OK_BUTTON_PRESSED;
+          }
+          break;
+        case OK_BUTTON_PRESSED:
+          button2Enabled = !button2Enabled;
+          currentState = IDLE;
+          break;
+      }
+
+      // increment hour
+      if (!button2Enabled && digitalRead(PLUS_BUTTON_PIN) == LOW) {
+        switch (countEditHour) {
+          case 1:
+            lcd.setCursor(2, 1);
+            hours = (hours + 1) % 24;
+            sprintf(hoursStr, "%02d", hours);
+            lcd.print(hoursStr);
+            break;
+          case 2:
+            lcd.setCursor(5, 1);
+            minutes = (minutes + 1) % 60;
+            sprintf(minutesStr, "%02d", minutes);
+            lcd.print(minutesStr);
+            break;
+          default:
+            countEditHour = 0;
+            button2Enabled = !button2Enabled;
+            break;
+        }
+        delay(200);
+      }
+      // decrement hour
+      if (!button2Enabled && digitalRead(MINUS_BUTTON_PIN) == LOW) {
+        switch (countEditHour) {
+          case 1:
+            lcd.setCursor(2, 1);
+            hours = (hours + 23) % 24;
+            sprintf(hoursStr, "%02d", hours);
+            lcd.print(hoursStr);
+            break;
+          case 2:
+            lcd.setCursor(5, 1);
+            minutes = (minutes + 59) % 60;
+            sprintf(minutesStr, "%02d", minutes);
+            lcd.print(minutesStr);
+            break;
+          default:
+            countEditHour = 0;
+            button2Enabled = !button2Enabled;
+            break;
+        }
+        delay(200);
       }
     }
   } else if (mode == 2 && submode == -2 &&
@@ -180,7 +243,7 @@ void mainMenu() {
   }
 }
 
-void savignScreen() {
+void savingScreen() {
   lcd.setCursor(0, 1);
   lcd.print("Saving.");
   delay(200);
@@ -194,9 +257,4 @@ void savignScreen() {
   delay(200);
   lcd.print(".");
   delay(200);
-  lcd.print(".");
-  delay(200);
-  lcd.print(".");
-  delay(200);
-  lcd.print(".");
 }
