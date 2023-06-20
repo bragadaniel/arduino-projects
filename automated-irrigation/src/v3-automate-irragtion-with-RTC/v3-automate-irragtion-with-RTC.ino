@@ -9,6 +9,7 @@
  */
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <ButtonDebounce.h>
 #include <EEPROM.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -20,12 +21,13 @@
 #define SCREEN_HEIGHT 64   //--> OLED display height in pixels
 #define OLED_RESET -1      // Reset pin (or -1 if sharing Arduino reset pin)
 #define MODE_BUTTON_PIN 2
-#define UP_BUTTON_PIN 3
-#define DOWN_BUTTON_PIN 4
+#define DOWN_BUTTON_PIN 3
+#define UP_BUTTON_PIN 4
 #define INTERVAL_TIME_DATE 1000  // interval ms
 
 RTC_DS1307 rtc;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+ButtonDebounce btnDebounce;
 
 // cursor drawing for changes
 const unsigned char topArrow[] PROGMEM = {0x20, 0x70, 0xf8};
@@ -74,12 +76,16 @@ char st[2];
 
 // menu config
 byte menuOptionCount = 0;
-bool menuStatus = false;
+bool mainMenu = false;
+bool clockMenu = false;
 
 // update Time and Date
 unsigned long prevGetTimeDate = 0;  // store last time was updated
 
-// debounce push button down
+// blink mode
+unsigned long previousMillis = 0;
+const unsigned long blinkInterval = 700;
+bool isBlinking = false;
 
 void setup() {
   Serial.begin(9600);
@@ -115,27 +121,15 @@ void loop() {
   readyButton();
 
   // display menu and select options
-  if (menuStatus == false) {
+  if (mainMenu == false) {
+    btnDebounce.runFnDebounce(btnMode, &lastButtonStates[0], &buttonStates[0],
+                              DEBOUNCE_DELAY, &lastDebounceTimes[0],
+                              modeFnDebounce);
     initialDisplay();
   }
 
-  // prototype debounce is temporally
-  if (btnMode != lastButtonStates[0]) {
-    lastDebounceTimes[0] = millis();
-  }
-  if ((millis() - lastDebounceTimes[0]) > DEBOUNCE_DELAY) {
-    if (btnMode != buttonStates[0]) {
-      buttonStates[0] = btnMode;
-      if (buttonStates[0] == LOW && menuStatus == false) {
-        menuStatus = true;
-        menuOptionCount = 1;
-      }
-    }
-  }
-
-  if (menuStatus == true) {
+  while (mainMenu == true) {
     readyButton();
-
     switch (menuOptionCount) {
       case 1:
         menu(menuOptionCount);
@@ -143,65 +137,90 @@ void loop() {
       case 2:
         menu(menuOptionCount);
         break;
-      case 3:
+      case 3:  // back option
         menu(menuOptionCount);
         break;
       default:
         initialDisplay();
         break;
     }
-    if (btnMode != lastButtonStates[0]) {
-      lastDebounceTimes[0] = millis();
-    }
-    if ((millis() - lastDebounceTimes[0]) > DEBOUNCE_DELAY) {
-      if (btnMode != buttonStates[0]) {
-        buttonStates[0] = btnMode;
-        if (buttonStates[0] == LOW && menuOptionCount == 1) {
-          getDateTime();
-        }
+    // debounce buttons
+    btnDebounce.runFnDebounce(btnMode, &lastButtonStates[0], &buttonStates[0],
+                              DEBOUNCE_DELAY, &lastDebounceTimes[0],
+                              modeMenuDebounce);
 
-        if (buttonStates[0] == LOW && menuOptionCount == 2) {
-          getDateTime();
-        }
-        if (buttonStates[0] == LOW && menuOptionCount == 3) {
-          menuOptionCount = 0;
-          menuStatus = false;
-        }
-      }
-    }
+    btnDebounce.runFnDebounce(btnDown, &lastButtonStates[1], &buttonStates[1],
+                              DEBOUNCE_DELAY, &lastDebounceTimes[1],
+                              downFnDebounce);
 
-    if (btnDown != lastButtonStates[1]) {
-      lastDebounceTimes[1] = millis();
-    }
-    if ((millis() - lastDebounceTimes[1]) > DEBOUNCE_DELAY) {
-      if (btnDown != buttonStates[1]) {
-        buttonStates[1] = btnDown;
-        if (buttonStates[1] == LOW) {
-          menuOptionCount++;
-          if (menuOptionCount > 3) menuOptionCount = 1;
-        }
-      }
-    }
-
-    if (btnUp != lastButtonStates[2]) {
-      lastDebounceTimes[2] = millis();
-    }
-    if ((millis() - lastDebounceTimes[2]) > DEBOUNCE_DELAY) {
-      if (btnUp != buttonStates[2]) {
-        buttonStates[2] = btnUp;
-        if (buttonStates[2] == LOW) {
-          menuOptionCount--;
-          if (menuOptionCount < 1) menuOptionCount = 3;
-        }
-      }
-    }
+    btnDebounce.runFnDebounce(btnUp, &lastButtonStates[2], &buttonStates[2],
+                              DEBOUNCE_DELAY, &lastDebounceTimes[2],
+                              upFnDebounce);
+  }  // eof menu stat true
+  while (clockMenu) {
+    readyButton();
+    getDateTime(true, 0, 30);
+    display.display();
+    btnDebounce.runFnDebounce(btnMode, &lastButtonStates[0], &buttonStates[0],
+                              DEBOUNCE_DELAY, &lastDebounceTimes[0],
+                              modeFnClockMenu);
   }
 
-  // state debounce push buttons
-  lastButtonStates[0] = btnMode;
-  lastButtonStates[1] = btnDown;
-  lastButtonStates[2] = btnUp;
 }  // eof
+
+// role clock menu
+void modeFnClockMenu() {
+  buttonStates[0] = btnMode;
+  if (buttonStates[0] == LOW) {
+    clockMenu = false;
+    mainMenu = true;
+  }
+}
+
+// role modeBtn for initial screen
+void modeFnDebounce() {
+  buttonStates[0] = btnMode;
+  if (buttonStates[0] == LOW && mainMenu == false) {
+    mainMenu = true;
+    menuOptionCount = 1;
+  }
+}
+
+// role modeBtn for menu screen
+void modeMenuDebounce() {
+  buttonStates[0] = btnMode;
+  // to first option selected
+  if (buttonStates[0] == LOW && menuOptionCount == 1) {
+    clockMenu = true;
+    mainMenu = false;
+  }
+
+  if (buttonStates[0] == LOW && menuOptionCount == 2) {
+    // TODO: set alarm screen
+    clockMenu = true;
+    mainMenu = false;
+  }
+  if (buttonStates[0] == LOW && menuOptionCount == 3) {
+    menuOptionCount = 0;
+    mainMenu = false;
+  }
+}
+
+void upFnDebounce() {
+  buttonStates[2] = btnUp;
+  if (buttonStates[2] == LOW) {
+    menuOptionCount--;
+    if (menuOptionCount < 1) menuOptionCount = 3;
+  }
+}
+
+void downFnDebounce() {
+  buttonStates[1] = btnDown;
+  if (buttonStates[1] == LOW) {
+    menuOptionCount++;
+    if (menuOptionCount > 3) menuOptionCount = 1;
+  }
+}
 
 void readyButton() {
   btnMode = digitalRead(MODE_BUTTON_PIN);
@@ -209,9 +228,13 @@ void readyButton() {
   btnDown = digitalRead(DOWN_BUTTON_PIN);
 }
 
-void getDateTime() {
+void getDateTime(bool isClear, int x, int y) {
+  if (isClear) {
+    clearDisplay();
+  }
   DateTime now = rtc.now();
-  display.setCursor(0, 30);
+  // display.setCursor(0, 30);
+  display.setCursor(x, y);
   hour24 = (now.hour() + 1) % 24;
   sprintf(hoursStr, "%02d", now.hour());
   display.print(hoursStr);
@@ -223,10 +246,11 @@ void getDateTime() {
   second = (now.second() + 59) % 60;
   sprintf(secondStr, "%02d", now.second());
   display.print(secondStr);
+  // display.display();
 }
 
 void menu(byte selectOption) {
-  menuDisplay();
+  menuConfigDisplay();
   switch (selectOption) {
     case 1:
       display.drawBitmap(0, 20, sideArrow, 3, 5, WHITE);
@@ -245,29 +269,35 @@ void menu(byte selectOption) {
 }
 
 void initialDisplay() {
-  display.clearDisplay();
-  display.setTextColor(WHITE);
-  display.setTextSize(1);
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= blinkInterval) {
+    previousMillis = currentMillis;
+    isBlinking = !isBlinking;
+  }
+  clearDisplay();  // clear display
 
-  display.setCursor(11, 0);
-  display.print("***- WELCOME -***");
+  display.setCursor(20, 0);
+  display.print("** WELCOME **");
 
-  display.setCursor(7, 18);
-  display.print("Press yellow button");
-
-  display.setCursor(7, 28);
-  display.print("for initialized!");
-
+  display.setCursor(7, 16);
+  if (!isBlinking) {
+    display.print("Press yellow button");
+  }
+  display.setCursor(0, 26);
+  display.print("Current time:");
+  getDateTime(false, 0, 38);
+  display.setCursor(0, 47);
+  display.print("Next irrigation:");
+  display.setCursor(0, 57);
+  display.print("19:25:30");
   display.display();
 }
 
-void menuDisplay() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
+void menuConfigDisplay() {
+  clearDisplay();
 
   display.setCursor(12, 0);
-  display.print("***- MENU -***");
+  display.print("-- MENU --");
 
   display.setCursor(7, 20);
   display.print("Set Time and Date");
@@ -277,4 +307,10 @@ void menuDisplay() {
 
   display.setCursor(7, 55);
   display.print("Back");
+}
+
+void clearDisplay() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
 }
