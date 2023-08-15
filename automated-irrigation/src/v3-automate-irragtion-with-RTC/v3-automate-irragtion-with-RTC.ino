@@ -31,6 +31,25 @@ RTC_DS1307 rtc;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 ButtonDebounce btnDebounce;
 
+struct AlarmStrData {
+  char hourStr[3];
+  char minStr[3];
+};
+struct AlarmData {
+  byte hour = 0;
+  byte min = 0;
+};
+
+const int ALARM1_ADDRESS = 0;
+const int ALARM2_ADDRESS = sizeof(AlarmData);
+
+AlarmStrData alarmStrData1;
+AlarmStrData alarmStrData2;
+AlarmStrData alarmStrData3;
+
+AlarmData alarmData1;
+AlarmData alarmData2;
+
 // cursor drawing for changes
 const unsigned char topArrow[] PROGMEM = {0x20, 0x70, 0xf8};
 const unsigned char bottomArrow[] PROGMEM = {0xf8, 0x70, 0x20};
@@ -239,52 +258,56 @@ void menuAlarmConfig(byte selectOption) {
 
 void alarmsViewDisplay() {
   clearDisplay();
-  char alarmHourStr1[3];
-  char alarmMinStr1[3];
-  char alarmHourStr2[3];
-  char alarmMinStr2[3];
-  byte alarmHour1 = EEPROM.read(0);
-  byte alarmMin1 = EEPROM.read(1);
-  byte alarmHour2 = EEPROM.read(2);
-  byte alarmMin2 = EEPROM.read(3);
-  sprintf(alarmHourStr1, "%02d", alarmHour1);
-  sprintf(alarmMinStr1, "%02d", alarmMin1);
-  sprintf(alarmHourStr2, "%02d", alarmHour2);
-  sprintf(alarmMinStr2, "%02d", alarmMin2);
+  // read mem
+  EEPROM.get(ALARM1_ADDRESS, alarmData1);
+  EEPROM.get(ALARM2_ADDRESS, alarmData2);
+
+  sprintf(alarmStrData1.hourStr, "%02d", alarmData1.hour);
+  sprintf(alarmStrData1.minStr, "%02d", alarmData1.min);
+  sprintf(alarmStrData2.hourStr, "%02d", alarmData2.hour);
+  sprintf(alarmStrData2.minStr, "%02d", alarmData2.min);
 
   display.setCursor(20, 0);
   display.print("** ALARMS **");
 
   display.setCursor(7, 20);
   display.print("#1 Alarm: ");
-  display.print(alarmHourStr1);
+  display.print(alarmStrData1.hourStr);
   display.print(":");
-  display.print(alarmMinStr1);
+  display.print(alarmStrData1.minStr);
+  display.print(":00");
 
   display.setCursor(7, 30);
   display.print("#2 Alarm: ");
-  display.print(alarmHourStr2);
+  display.print(alarmStrData2.hourStr);
   display.print(":");
-  display.print(alarmMinStr2);
+  display.print(alarmStrData2.minStr);
+  display.print(":00");
 
   display.setCursor(7, 55);
   display.print("Back");
 }
 
 void alarmEditDisplay() {
-  char strHours[3];
-  char strMinutes[3];
   clearDisplay();
   display.setCursor(10, 0);
   display.print("Edit Alarm #");
   display.print(menuOptionCount);
 
   display.setCursor(35, 16);
-  sprintf(strHours, "%02d", hours);
-  display.print(strHours);
+  if (menuOptionCount == 1) {
+    sprintf(alarmStrData3.hourStr, "%02d", alarmData1.hour);
+  } else {
+    sprintf(alarmStrData3.hourStr, "%02d", alarmData2.hour);
+  }
+  display.print(alarmStrData3.hourStr);
   display.print(":");
-  sprintf(strMinutes, "%02d", minutes);
-  display.print(strMinutes);
+  if (menuOptionCount == 1) {
+    sprintf(alarmStrData3.minStr, "%02d", alarmData1.min);
+  } else {
+    sprintf(alarmStrData3.minStr, "%02d", alarmData2.min);
+  }
+  display.print(alarmStrData3.minStr);
   display.print(":00");
 
   display.setCursor(7, 45);
@@ -301,7 +324,7 @@ void getTime() {
   char secondStr[3];
 
   DateTime now = rtc.now();
-  display.setCursor(0, 38);
+  display.setCursor(36, 37);
   sprintf(hoursStr, "%02d", now.hour());
   display.print(hoursStr);
   display.print(":");
@@ -368,12 +391,10 @@ void modeEditFnAlarmDebounce() {
     savingDisplay();
 
     if (menuOptionCount == 1) {  // save alarm1
-      EEPROM.write(0, (byte)(hours));
-      EEPROM.write(1, (byte)(minutes));
+      EEPROM.put(ALARM1_ADDRESS, alarmData1);
     }
     if (menuOptionCount == 2) {  // save alarm2
-      EEPROM.write(2, (byte)(hours));
-      EEPROM.write(3, (byte)(minutes));
+      EEPROM.put(ALARM2_ADDRESS, alarmData2);
     }
     mainMenu = true;
     alarmEditMenu = false;
@@ -410,10 +431,18 @@ void upEditAlarmFnDebounce() {
     if (menuEditOptionCount < 1) menuEditOptionCount = 4;
   }
   if (buttonStates[2] == LOW && setHours) {  // decrement hours
-    hours = (hours - 1 + 24) % 24;
+    if (menuOptionCount == 1) {
+      alarmData1.hour = (alarmData1.hour - 1 + 24) % 24;
+    } else {
+      alarmData2.hour = (alarmData2.hour - 1 + 24) % 24;
+    }
   }
   if (buttonStates[2] == LOW && setMinutes) {  // decrement minutes
-    minutes = (minutes + 59) % 60;
+    if (menuOptionCount == 1) {
+      alarmData1.min = (alarmData1.min + 59) % 60;
+    } else {
+      alarmData2.min = (alarmData2.min + 59) % 60;
+    }
   }
 }
 
@@ -425,10 +454,18 @@ void downEditAlarmFnDebounce() {
   }
 
   if (buttonStates[1] == LOW && setHours) {  // increment hours
-    hours = (hours + 1) % 24;
+    if (menuOptionCount == 1) {
+      alarmData1.hour = (alarmData1.hour + 1) % 24;
+    } else {
+      alarmData2.hour = (alarmData2.hour + 1) % 24;
+    }
   }
   if (buttonStates[1] == LOW && setMinutes) {  // increment minutes
-    minutes = (minutes - 59 + 60) % 60;
+    if (menuOptionCount == 1) {
+      alarmData1.min = (alarmData1.min - 59 + 60) % 60;
+    } else {
+      alarmData2.min = (alarmData2.min - 59 + 60) % 60;
+    }
   }
 }
 
@@ -439,14 +476,13 @@ void downFnDebounce() {
     if (menuOptionCount > 3) menuOptionCount = 1;
   }
 }
-
 // ready buttons
 void readyButtons() {
   btnMode = digitalRead(MODE_BUTTON_PIN);
   btnUp = digitalRead(UP_BUTTON_PIN);
   btnDown = digitalRead(DOWN_BUTTON_PIN);
 }
-
+// save display
 void savingDisplay() {
   display.clearDisplay();
   display.setTextSize(1);
@@ -460,5 +496,4 @@ void clearDisplay() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
-  // display.display();
 }
