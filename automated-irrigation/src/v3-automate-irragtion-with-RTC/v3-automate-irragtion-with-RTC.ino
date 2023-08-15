@@ -71,6 +71,13 @@ int buttonStates[NUM_BUTTONS];
 int lastButtonStates[NUM_BUTTONS];
 unsigned long lastDebounceTimes[NUM_BUTTONS];
 
+// duration irrigation
+// TODO: for 15 min change 0.5 to 15
+const int DURATION_IRRIGATION = 0.5 * 60;  // 30 sec
+unsigned long irrigation1EndTime = 0;
+unsigned long irrigation2EndTime = 0;
+bool irrigation1Running = false;
+
 // menu config
 byte menuOptionCount = 0;
 byte menuEditOptionCount = 0;
@@ -125,13 +132,17 @@ void setup() {
 
 void loop() {
   readyButtons();
+  startIrrigation();
+
   // display menu and select options
   if (mainMenu == false) {
+    initialDisplay();
+
     btnDebounce.runFnDebounce(btnMode, &lastButtonStates[0], &buttonStates[0],
                               DEBOUNCE_DELAY, &lastDebounceTimes[0],
                               modeFnDebounce);
-    initialDisplay();
   }
+
   while (mainMenu == true) {
     readyButtons();
     switch (menuOptionCount) {
@@ -196,13 +207,14 @@ void loop() {
                               downEditAlarmFnDebounce);
 
     display.display();
-  }
+  }  // eof alarm edit
+
 }  // eof
 
 void initialDisplay() {
   clearDisplay();  // clear display
 
-  display.setCursor(20, 0);
+  display.setCursor(22, 0);
   display.print("** WELCOME **");
 
   display.setCursor(7, 16);
@@ -210,10 +222,6 @@ void initialDisplay() {
   display.setCursor(0, 26);
   display.print("Current time:");
   getTime();
-  display.setCursor(0, 47);
-  display.print("Next irrigation:");
-  display.setCursor(0, 57);
-  display.print("19:25:30");
   display.display();
 }
 
@@ -267,18 +275,18 @@ void alarmsViewDisplay() {
   sprintf(alarmStrData2.hourStr, "%02d", alarmData2.hour);
   sprintf(alarmStrData2.minStr, "%02d", alarmData2.min);
 
-  display.setCursor(20, 0);
-  display.print("** ALARMS **");
+  display.setCursor(14, 0);
+  display.print("** IRRIGATIONS **");
 
   display.setCursor(7, 20);
-  display.print("#1 Alarm: ");
+  display.print("#1 Config: ");
   display.print(alarmStrData1.hourStr);
   display.print(":");
   display.print(alarmStrData1.minStr);
   display.print(":00");
 
   display.setCursor(7, 30);
-  display.print("#2 Alarm: ");
+  display.print("#2 Config: ");
   display.print(alarmStrData2.hourStr);
   display.print(":");
   display.print(alarmStrData2.minStr);
@@ -291,7 +299,7 @@ void alarmsViewDisplay() {
 void alarmEditDisplay() {
   clearDisplay();
   display.setCursor(10, 0);
-  display.print("Edit Alarm #");
+  display.print("Edit Irrigation #");
   display.print(menuOptionCount);
 
   display.setCursor(35, 16);
@@ -319,11 +327,18 @@ void alarmEditDisplay() {
 
 // get time
 void getTime() {
+  DateTime now = rtc.now();
+  EEPROM.get(ALARM1_ADDRESS, alarmData1);
+  EEPROM.get(ALARM2_ADDRESS, alarmData2);
+
   char hoursStr[3];
   char minuteStr[3];
   char secondStr[3];
+  int currentHour = now.hour();
+  int currentMinute = now.minute();
+  int minutesRemainingAlarm1 = 0;
+  int minutesRemainingAlarm2 = 0;
 
-  DateTime now = rtc.now();
   display.setCursor(36, 37);
   sprintf(hoursStr, "%02d", now.hour());
   display.print(hoursStr);
@@ -333,8 +348,78 @@ void getTime() {
   display.print(":");
   sprintf(secondStr, "%02d", now.second());
   display.print(secondStr);
+
+  // next irrigation
+  display.setCursor(0, 47);
+  display.print("Next irrigation:");
+  display.setCursor(36, 57);
+
+  if (currentHour < alarmData1.hour ||
+      (currentHour == alarmData1.hour && currentMinute < alarmData1.min)) {
+    minutesRemainingAlarm1 =
+        (alarmData1.hour - currentHour) * 60 + (alarmData1.min - currentMinute);
+  } else {
+    minutesRemainingAlarm1 = (24 - currentHour + alarmData1.hour) * 60 +
+                             (alarmData1.min - currentMinute);
+  }
+
+  if (currentHour < alarmData2.hour ||
+      (currentHour == alarmData2.hour && currentMinute < alarmData2.min)) {
+    minutesRemainingAlarm2 =
+        (alarmData2.hour - currentHour) * 60 + (alarmData2.min - currentMinute);
+  } else {
+    minutesRemainingAlarm2 = (24 - currentHour + alarmData2.hour) * 60 +
+                             (alarmData2.min - currentMinute);
+  }
+
+  if (minutesRemainingAlarm1 < minutesRemainingAlarm2) {
+    sprintf(hoursStr, "%02d", alarmData1.hour);
+    sprintf(minuteStr, "%02d", alarmData1.min);
+    display.print(hoursStr);
+    display.print(":");
+    display.print(minuteStr);
+    display.print(":00");
+  } else if (minutesRemainingAlarm2 < minutesRemainingAlarm1) {
+    sprintf(hoursStr, "%02d", alarmData2.hour);
+    sprintf(minuteStr, "%02d", alarmData2.min);
+    display.print(hoursStr);
+    display.print(":");
+    display.print(minuteStr);
+    display.print(":00");
+  } else {
+    display.print("Not config irrigations");
+  }
 }
 
+void startIrrigation() {
+  DateTime now = rtc.now();
+  EEPROM.get(ALARM1_ADDRESS, alarmData1);
+  EEPROM.get(ALARM2_ADDRESS, alarmData2);
+  int currentHour = now.hour();
+  int currentMin = now.minute();
+
+  if (currentHour == alarmData1.hour && currentMin == alarmData1.min) {
+    for (int i = 0; i < NUM_RELAY; i++) {
+      digitalWrite(RELAY_PINS[i], LOW);
+    }
+    signalIrrigationDisplay();
+  } else if (currentHour == alarmData2.hour && currentMin == alarmData2.min) {
+    for (int i = 0; i < NUM_RELAY; i++) {
+      digitalWrite(RELAY_PINS[i], LOW);
+    }
+    signalIrrigationDisplay();
+  } else {
+    for (int i = 0; i < NUM_RELAY; i++) {
+      digitalWrite(RELAY_PINS[i], HIGH);
+    }
+  }
+}
+
+void signalIrrigationDisplay() {
+  display.setCursor(0, 0);
+  display.print('.');
+  display.display();
+}
 // ### ACTIONS BUTTONS ###
 // role modeBtn for initial screen
 void modeFnDebounce() {
